@@ -1,4 +1,5 @@
 services:
+
   postgres:
     image: postgres:16-alpine
     container_name: chatbot_postgres
@@ -19,6 +20,31 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: chatbot_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      APP_NAME: "AI Chatbot"
+      APP_ENV: production
+      DEBUG: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: chatbot_db
+      POSTGRES_USER: chatbot_user
+      POSTGRES_PASSWORD: chatbot_pass
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GROQ_MODEL: ${GROQ_MODEL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - chatbot_network
 
 volumes:
   postgres_data:
