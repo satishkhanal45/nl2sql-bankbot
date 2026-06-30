@@ -343,6 +343,18 @@ docker exec -it chatbot_postgres psql -U chatbot_user -d chatbot_db
 
 > This connects from inside the Docker network, so the container's internal port 5432 is used directly — no need to reference the host-mapped port 5433 here.
 
+View individual tables directly:
+
+```bash
+docker exec -it chatbot_postgres psql -U chatbot_user -d chatbot_db
+```
+
+```sql
+SELECT * FROM entity;
+SELECT * FROM attribute;
+SELECT * FROM entity_value;
+```
+
 View all data with human-readable names:
 
 ```sql
@@ -420,3 +432,4 @@ The test suite includes 33 tests covering:
 | `POSTGRES_PASSWORD` | Database password | `chatbot_pass` |
 | `GROQ_API_KEY` | Groq API key (required) | — |
 | `GROQ_MODEL` | Groq model to use | `llama-3.3-70b-versatile` |
+
