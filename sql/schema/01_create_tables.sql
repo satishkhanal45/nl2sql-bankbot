@@ -1,8 +1,6 @@
--- ============================================================
+
 -- TABLE 1: entity
--- Stores the main entities and their facts
--- Example: bank → home_loan, bank → main_branch
--- ============================================================
+
 CREATE TABLE IF NOT EXISTS entity (
     id          SERIAL PRIMARY KEY,
     entity_name VARCHAR(100) NOT NULL,
@@ -20,11 +18,9 @@ CREATE INDEX IF NOT EXISTS idx_entity_name ON entity (entity_name);
 CREATE INDEX IF NOT EXISTS idx_entity_fact ON entity (fact);
 
 
--- ============================================================
+
 -- TABLE 2: attribute
--- Stores the types of attributes we can record
--- Example: interest_rate, address, email, phone
--- ============================================================
+
 CREATE TABLE IF NOT EXISTS attribute (
     id         SERIAL PRIMARY KEY,
     label      VARCHAR(100) NOT NULL,
@@ -38,11 +34,8 @@ CREATE TABLE IF NOT EXISTS attribute (
 CREATE INDEX IF NOT EXISTS idx_attribute_label ON attribute (label);
 
 
--- ============================================================
+
 -- TABLE 3: entity_value
--- Links entity + attribute + value together
--- Also stores LTREE path for hierarchical queries
--- ============================================================
 CREATE TABLE IF NOT EXISTS entity_value (
     id           SERIAL PRIMARY KEY,
     entity_id    INTEGER NOT NULL,

@@ -15,7 +15,7 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
-    echo=settings.debug,  # logs all SQL queries in development
+    echo=False,  # logs all SQL queries in development
 )
 
 # SessionLocal is a factory that creates new Session objects

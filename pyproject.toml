@@ -1,5 +1,5 @@
 [project]
-name = "ai-chatbot"
+name = "nl2sql-bankbot"
 version = "0.1.0"
 description = "Production-quality AI chatbot powered by Groq and PostgreSQL"
 readme = "README.md"

@@ -1,6 +1,4 @@
--- ============================================================
 -- SEED DATA: entity
--- ============================================================
 INSERT INTO entity (entity_name, fact) VALUES
     ('bank', 'central_bank'),
     ('bank', 'home_loan'),
@@ -13,9 +11,7 @@ INSERT INTO entity (entity_name, fact) VALUES
 ON CONFLICT (entity_name, fact) DO NOTHING;
 
 
--- ============================================================
 -- SEED DATA: attribute
--- ============================================================
 INSERT INTO attribute (label) VALUES
     ('address'),
     ('email'),
@@ -33,9 +29,8 @@ INSERT INTO attribute (label) VALUES
 ON CONFLICT (label) DO NOTHING;
 
 
--- ============================================================
+
 -- SEED DATA: entity_value
--- ============================================================
 INSERT INTO entity_value (entity_id, attribute_id, path_name, value, type) VALUES
 
     -- central_bank (entity_id=1)
