@@ -1,6 +1,6 @@
-# AI Chatbot
+# NL2SQL BankBot
 
-A production-quality AI chatbot whose knowledge is stored in a structured PostgreSQL database. Instead of retrieving answers from documents, the chatbot answers questions by querying relational data using natural language.
+A production-quality AI chatbot whose knowledge is stored in a structured PostgreSQL database. Instead of retrieving answers from documents, the chatbot answers questions by converting natural language into structured queries and searching relational data directly.
 
 ---
 
@@ -52,7 +52,7 @@ Groq LLM — converts value to natural language
 ## Project Structure
 
 ```
-ai-chatbot/
+nl2sql-bankbot/
 ├── app/
 │   ├── main.py                        # FastAPI entry point
 │   ├── api/
@@ -167,7 +167,7 @@ The database includes these bank facts:
 
 ```bash
 git clone <your-repo-url>
-cd ai-chatbot
+cd nl2sql-bankbot
 cp .env.example .env
 ```
 
@@ -192,6 +192,8 @@ uv sync
 ```bash
 docker compose up -d postgres
 ```
+
+> PostgreSQL is exposed on **host port 5433** (mapped to container port 5432) to avoid conflicts with any local PostgreSQL installation. Make sure `POSTGRES_PORT=5433` in your `.env`.
 
 ### 4. Run Database Migrations and Seed Data
 
@@ -232,7 +234,7 @@ docker compose up --build
 ```
 
 This starts:
-- `chatbot_postgres` — PostgreSQL on port 5432
+- `chatbot_postgres` — PostgreSQL on port 5433
 - `chatbot_api` — FastAPI on port 8000
 
 Check status:
@@ -263,7 +265,7 @@ Response:
 ```json
 {
   "status": "ok",
-  "app": "AI Chatbot",
+  "app": "NL2SQL BankBot",
   "env": "production",
   "database": "connected"
 }
@@ -309,9 +311,11 @@ For quick testing without curl, use the interactive terminal chat:
 uv run python chat.py
 ```
 
+> SQL query logging is disabled (`echo=False` in `database.py`) so the terminal output stays clean — only the conversation is shown.
+
 ```
 ==================================================
-   AI Bank Chatbot
+   NL2SQL BankBot — Terminal Chat
 ==================================================
 Ask me anything about the bank!
 Type 'exit' or 'quit' to stop.
@@ -336,6 +340,8 @@ Connect to the database:
 ```bash
 docker exec -it chatbot_postgres psql -U chatbot_user -d chatbot_db
 ```
+
+> This connects from inside the Docker network, so the container's internal port 5432 is used directly — no need to reference the host-mapped port 5433 here.
 
 View all data with human-readable names:
 
@@ -396,6 +402,7 @@ The test suite includes 33 tests covering:
 | 13 | FastAPI REST endpoints | ✅ |
 | 14 | Automated testing (33 tests) | ✅ |
 | 15 | Full Docker Compose deployment | ✅ |
+| 16 | Final architecture review | ⏳ Pending |
 
 ---
 
@@ -403,11 +410,11 @@ The test suite includes 33 tests covering:
 
 | Variable | Description | Default |
 |---|---|---|
-| `APP_NAME` | Application name | `AI Chatbot` |
+| `APP_NAME` | Application name | `NL2SQL BankBot` |
 | `APP_ENV` | Environment (development/production) | `development` |
-| `DEBUG` | Enable debug mode and SQL logging | `true` |
+| `DEBUG` | Enable FastAPI debug mode | `true` |
 | `POSTGRES_HOST` | PostgreSQL host | `localhost` |
-| `POSTGRES_PORT` | PostgreSQL port | `5432` |
+| `POSTGRES_PORT` | PostgreSQL port | `5433` |
 | `POSTGRES_DB` | Database name | `chatbot_db` |
 | `POSTGRES_USER` | Database user | `chatbot_user` |
 | `POSTGRES_PASSWORD` | Database password | `chatbot_pass` |
