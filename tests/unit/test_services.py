@@ -55,12 +55,15 @@ def test_format_value_interest_rate():
 
 def test_format_value_loan_amount():
     """Verify loan amount is formatted with NPR and commas."""
-    assert format_value("5000000", "numeric", "loan_amount") == "NPR 5,000,000"
+    assert format_value("5000000", "numeric", "minimum_loan_amount") == "NPR 5,000,000"
 
 
 def test_format_value_tenure():
     """Verify tenure is formatted with years."""
-    assert format_value("20", "numeric", "tenure") == "20 years"
+    assert format_value("25", "numeric", "minimum_tenure") == "25 years"
+
+
+
 
 
 def test_format_value_string():

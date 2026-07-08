@@ -67,67 +67,17 @@ def get_entity_value(
     )
 
 
-def get_value_by_entity_fact_attribute(
-    db: Session,
-    entity_name: str,
-    fact: str,
-    attribute: str,
-) -> Optional[dict]:
-    """
-    The main query function used by the chatbot.
-
-    Given an entity, fact, and attribute — returns the matching value.
-
-    Example:
-        get_value_by_entity_fact_attribute(
-            db,
-            entity_name="bank",
-            fact="home_loan",
-            attribute="interest_rate",
-        )
-        → {"value": "8.5", "type": "numeric", "path_name": "bank.home_loan.interest_rate"}
-
-    Returns None if no match is found.
-    """
-    result = (
-        db.query(
-            EntityValue.value,
-            EntityValue.type,
-            EntityValue.path_name,
-        )
-        .join(Entity, Entity.id == EntityValue.entity_id)
-        .join(Attribute, Attribute.id == EntityValue.attribute_id)
-        .filter(
-            Entity.entity_name == entity_name,
-            Entity.fact == fact,
-            Attribute.label == attribute,
-        )
-        .first()
-    )
-
-    if result is None:
-        return None
-
-    return {
-        "value": result.value,
-        "type": result.type,
-        "path_name": str(result.path_name) if result.path_name else None,
-    }
-
-
 def get_all_facts_for_entity(
     db: Session,
     entity_name: str,
 ) -> list[dict]:
     """
     Returns all facts and their values for a given entity.
-    Useful for listing everything we know about 'bank'.
 
     Example:
         get_all_facts_for_entity(db, "bank")
         → [
             {"fact": "home_loan", "attribute": "interest_rate", "value": "8.5"},
-            {"fact": "home_loan", "attribute": "loan_amount", "value": "5000000"},
             ...
           ]
     """
@@ -158,40 +108,103 @@ def get_all_facts_for_entity(
     ]
 
 
-def get_values_by_ltree_path(
+def search_by_query_type(
     db: Session,
-    path_prefix: str,
-) -> list[dict]:
+    entity_name: str,
+    fact: str,
+    attribute: Optional[str],
+) -> dict:
     """
-    Uses LTREE's <@ operator to fetch all values under a path.
+    Combined search function that handles both specific and broad queries.
 
-    Example:
-        get_values_by_ltree_path(db, "bank.home_loan")
-        → all values whose path starts with 'bank.home_loan'
+    Specific query (attribute provided):
+        entity=bank, fact=home_loan, attribute=interest_rate
+        → constructs path: bank.home_loan.interest_rate
+        → exact LTREE match
+        → returns single value
 
-    This is the power of LTREE — hierarchical queries.
-    """
-    results = db.execute(
-        text("""
-            SELECT
-                ev.path_name,
-                ev.value,
-                ev.type,
-                a.label AS attribute
-            FROM entity_value ev
-            JOIN attribute a ON a.id = ev.attribute_id
-            WHERE ev.path_name <@ CAST(:path AS ltree)
-            ORDER BY ev.path_name
-        """),
-        {"path": path_prefix},
-    ).fetchall()
+    Broad query (attribute is None):
+        entity=bank, fact=home_loan, attribute=None
+        → constructs path prefix: bank.home_loan
+        → LTREE <@ hierarchical match
+        → returns all values under that path
 
-    return [
+    Returns:
         {
-            "path_name": str(row.path_name),
-            "attribute": row.attribute,
-            "value": row.value,
-            "type": row.type,
+            "query_type": "specific" or "broad",
+            "found": True or False,
+            "data": dict or list
         }
-        for row in results
-    ]
+    """
+    if attribute:
+        # ── SPECIFIC QUERY ─────────────────────────────────
+        path = f"{entity_name}.{fact}.{attribute}"
+
+        result = db.execute(
+            text("""
+                SELECT
+                    ev.value,
+                    ev.type,
+                    ev.path_name::text AS path_name
+                FROM entity_value ev
+                WHERE ev.path_name = CAST(:path AS ltree)
+            """),
+            {"path": path},
+        ).fetchone()
+
+        if result is None:
+            return {
+                "query_type": "specific",
+                "found": False,
+                "data": None,
+            }
+
+        return {
+            "query_type": "specific",
+            "found": True,
+            "data": {
+                "value": result.value,
+                "type": result.type,
+                "path_name": result.path_name,
+            },
+        }
+
+    else:
+        # ── BROAD QUERY ────────────────────────────────────
+        path_prefix = f"{entity_name}.{fact}"
+
+        results = db.execute(
+            text("""
+                SELECT
+                    ev.path_name::text AS path_name,
+                    ev.value,
+                    ev.type,
+                    a.label AS attribute
+                FROM entity_value ev
+                JOIN attribute a ON a.id = ev.attribute_id
+                WHERE ev.path_name <@ CAST(:path AS ltree)
+                ORDER BY ev.path_name
+            """),
+            {"path": path_prefix},
+        ).fetchall()
+
+        if not results:
+            return {
+                "query_type": "broad",
+                "found": False,
+                "data": [],
+            }
+
+        return {
+            "query_type": "broad",
+            "found": True,
+            "data": [
+                {
+                    "path_name": row.path_name,
+                    "attribute": row.attribute,
+                    "value": row.value,
+                    "type": row.type,
+                }
+                for row in results
+            ],
+        }

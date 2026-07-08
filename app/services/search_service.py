@@ -4,82 +4,42 @@ from app.db.repositories import entity_repository
 from typing import Optional
 
 
-def search_database(
-    db: Session,
-    entity: str,
-    fact: str,
-    attribute: str,
-) -> Optional[dict]:
-    """
-    Searches the database using entity, fact, and attribute.
-
-    Args:
-        db: SQLAlchemy session
-        entity: The entity name (e.g. "bank")
-        fact: The fact name (e.g. "home_loan")
-        attribute: The attribute label (e.g. "interest_rate")
-
-    Returns:
-        {
-            "value": "8.5",
-            "type": "numeric",
-            "path_name": "bank.home_loan.interest_rate",
-            "entity": "bank",
-            "fact": "home_loan",
-            "attribute": "interest_rate",
-            "formatted_value": "8.5%",
-        }
-        Or None if not found.
-    """
-    result = entity_repository.get_value_by_entity_fact_attribute(
-        db=db,
-        entity_name=entity,
-        fact=fact,
-        attribute=attribute,
-    )
-
-    if result is None:
-        return None
-
-    return {
-        "value": result["value"],
-        "type": result["type"],
-        "path_name": result["path_name"],
-        "entity": entity,
-        "fact": fact,
-        "attribute": attribute,
-        "formatted_value": format_value(result["value"], result["type"], attribute),
-    }
-
-
 def format_value(value: str, type: str, attribute: str) -> str:
     """
     Formats a raw database value into a human-readable string.
 
     Rules:
-    - interest_rate → append %
-    - processing_fee → append %
-    - loan_amount / minimum_balance / maximum_balance → append NPR and add commas
-    - tenure → append years
-    - Everything else → return as-is
+    - interest_rate, processing_fee, cashback → append %
+    - loan amounts, deposits, limits, fees    → prepend NPR with commas
+    - tenure                                  → append years
+    - everything else                         → return as-is
 
     Examples:
-        format_value("8.5", "numeric", "interest_rate") → "8.5%"
-        format_value("5000000", "numeric", "loan_amount") → "NPR 5,000,000"
-        format_value("20", "numeric", "tenure") → "20 years"
-        format_value("Baneshwor", "string", "address") → "Baneshwor"
+        format_value("8.5",     "numeric", "interest_rate")      → "8.5%"
+        format_value("5000000", "numeric", "minimum_loan_amount") → "NPR 5,000,000"
+        format_value("25",      "numeric", "maximum_tenure")      → "25 years"
+        format_value("Baneshwor", "string", "address")            → "Baneshwor"
     """
     if type == "numeric":
-        if attribute in ("interest_rate", "processing_fee"):
+        if attribute in ("interest_rate", "processing_fee", "cashback"):
             return f"{value}%"
-        elif attribute in ("loan_amount", "minimum_balance", "maximum_balance"):
+        elif attribute in (
+            "minimum_loan_amount",
+            "maximum_loan_amount",
+            "minimum_deposit",
+            "maximum_deposit",
+            "cash_withdrawal_limit",
+            "transaction_limit",
+            "annual_fee",
+            "joining_fee",
+            "replacement_fee",
+        ):
             try:
                 return f"NPR {int(float(value)):,}"
             except ValueError:
                 return value
-        elif attribute == "tenure":
+        elif attribute in ("minimum_tenure", "maximum_tenure"):
             return f"{value} years"
-
     return value
 
 
@@ -87,20 +47,24 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
     """
     Takes the output of understand_query() and searches the database.
 
-    This is the main bridge between Phase 10 (query understanding)
-    and Phase 11 (database search).
+    Handles two query types:
+    - specific: single value lookup via exact LTREE path match
+                triggered when attribute is present in query_result
+    - broad:    all values under a path prefix via LTREE <@ operator
+                triggered when attribute is None in query_result
 
     Args:
         db: SQLAlchemy session
-        query_result: Output from understand_query()
+        query_result: Output dict from understand_query()
 
     Returns:
         {
-            "success": True/False,
-            "found": True/False,
-            "data": {...} or None,
-            "query": {...},
-            "error": "..." or None,
+            "success":    True/False,
+            "found":      True/False,
+            "query_type": "specific", "broad", or "unknown",
+            "data":       dict (specific) | list (broad) | None,
+            "query":      the original query_result dict,
+            "error":      str or None,
         }
     """
     # If query understanding failed, pass the error through
@@ -108,6 +72,7 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
         return {
             "success": False,
             "found": False,
+            "query_type": "unknown",
             "data": None,
             "query": query_result,
             "error": query_result.get("error", "Query understanding failed"),
@@ -115,28 +80,48 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
 
     entity = query_result["entity"]
     fact = query_result["fact"]
-    attribute = query_result["attribute"]
+    attribute = query_result.get("attribute")  # None for broad queries
+    query_type = query_result.get("query_type", "specific")
 
-    db_result = search_database(
+    # Call the unified repository function
+    db_result = entity_repository.search_by_query_type(
         db=db,
-        entity=entity,
+        entity_name=entity,
         fact=fact,
         attribute=attribute,
     )
 
-    if db_result is None:
+    # Nothing found in database
+    if not db_result["found"]:
         return {
             "success": True,
             "found": False,
+            "query_type": query_type,
             "data": None,
             "query": query_result,
-            "error": f"No data found for {entity} → {fact} → {attribute}",
+            "error": (
+                f"No data found for {entity}.{fact}"
+                + (f".{attribute}" if attribute else ".*")
+            ),
         }
+
+    # Specific query — add formatted value to data
+    if db_result["query_type"] == "specific":
+        data = db_result["data"]
+        data["entity"] = entity
+        data["fact"] = fact
+        data["attribute"] = attribute
+        data["formatted_value"] = format_value(
+            data["value"],
+            data["type"],
+            attribute,
+        )
 
     return {
         "success": True,
         "found": True,
-        "data": db_result,
+        "query_type": db_result["query_type"],
+        "data": db_result["data"],
         "query": query_result,
         "error": None,
     }

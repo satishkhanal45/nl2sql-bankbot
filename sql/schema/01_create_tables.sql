@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS entity_value (
         ON DELETE CASCADE,
 
     -- Prevent duplicate entity+attribute combinations
-    CONSTRAINT uq_entity_attribute UNIQUE (entity_id, attribute_id)
+    --CONSTRAINT uq_entity_attribute UNIQUE (entity_id, attribute_id)
 );
 
 -- Index for fast lookups by entity_id
@@ -70,3 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_ev_attribute_id ON entity_value (attribute_id);
 
 -- GiST index for fast LTREE path queries (<@, @>, ~, ?)
 CREATE INDEX IF NOT EXISTS idx_ev_path_name ON entity_value USING GIST (path_name);
+
+
+
+
+

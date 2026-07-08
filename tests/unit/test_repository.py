@@ -43,22 +43,22 @@ def test_get_attribute_returns_none_for_unknown(db):
 
 
 def test_get_value_by_entity_fact_attribute(db):
-    """Verify the main query function returns correct values."""
-    result = entity_repository.get_value_by_entity_fact_attribute(
+    """Verify search_by_query_type returns correct value for specific query."""
+    result = entity_repository.search_by_query_type(
         db, "bank", "home_loan", "interest_rate"
     )
-    assert result is not None
-    assert result["value"] == "8.5"
-    assert result["type"] == "numeric"
-    assert result["path_name"] == "bank.home_loan.interest_rate"
+    assert result["found"] is True
+    assert result["query_type"] == "specific"
+    assert result["data"]["value"] == "8.5"
+    assert result["data"]["path_name"] == "bank.home_loan.interest_rate"
 
 
 def test_get_value_returns_none_for_unknown(db):
-    """Verify None is returned when no match exists."""
-    result = entity_repository.get_value_by_entity_fact_attribute(
+    """Verify search_by_query_type returns not found for unknown path."""
+    result = entity_repository.search_by_query_type(
         db, "bank", "unknown_fact", "unknown_attr"
     )
-    assert result is None
+    assert result["found"] is False
 
 
 def test_get_all_facts_for_entity(db):
@@ -70,12 +70,42 @@ def test_get_all_facts_for_entity(db):
     assert "saving_account" in fact_names
 
 
-def test_get_values_by_ltree_path(db):
-    """Verify LTREE path queries work correctly."""
-    results = entity_repository.get_values_by_ltree_path(
-        db, "bank.home_loan"
+def test_search_by_query_type_specific(db):
+    """Verify specific query returns single value via exact LTREE match."""
+    result = entity_repository.search_by_query_type(
+        db, "bank", "home_loan", "interest_rate"
     )
-    assert len(results) > 0
-    path_names = [r["path_name"] for r in results]
+    assert result["query_type"] == "specific"
+    assert result["found"] is True
+    assert result["data"]["value"] == "8.5"
+    assert result["data"]["path_name"] == "bank.home_loan.interest_rate"
+
+
+def test_search_by_query_type_broad(db):
+    """Verify broad query returns all values under a path prefix."""
+    result = entity_repository.search_by_query_type(
+        db, "bank", "home_loan", None
+    )
+    assert result["query_type"] == "broad"
+    assert result["found"] is True
+    assert len(result["data"]) > 0
+    path_names = [r["path_name"] for r in result["data"]]
     assert "bank.home_loan.interest_rate" in path_names
-    assert "bank.home_loan.loan_amount" in path_names
+    assert "bank.home_loan.loan_type" in path_names
+
+
+def test_search_by_query_type_not_found(db):
+    """Verify not found returned for unknown path."""
+    result = entity_repository.search_by_query_type(
+        db, "bank", "unknown_fact", "unknown_attr"
+    )
+    assert result["found"] is False
+
+
+def test_search_by_query_type_broad_not_found(db):
+    """Verify not found returned for unknown broad path."""
+    result = entity_repository.search_by_query_type(
+        db, "bank", "unknown_fact", None
+    )
+    assert result["found"] is False
+    assert result["data"] == []

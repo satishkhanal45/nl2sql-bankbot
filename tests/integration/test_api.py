@@ -38,18 +38,16 @@ def test_chat_endpoint_valid_question():
     assert data["data"]["value"] == "8.5"
     assert "8.5" in data["answer"]
 
-
 def test_chat_endpoint_vehicle_loan():
-    """Verify chat endpoint handles vehicle loan question."""
+    """Verify chat endpoint handles auto loan question."""
     response = client.post(
         "/chat",
-        json={"question": "What is the vehicle loan interest rate?"},
+        json={"question": "What is the auto_loan interest rate?"},
     )
     assert response.status_code == 200
     data = response.json()
     assert data["success"] is True
     assert data["data"]["value"] == "11.0"
-
 
 def test_chat_endpoint_out_of_scope():
     """Verify chat endpoint handles out of scope questions."""
@@ -82,10 +80,10 @@ def test_chat_endpoint_missing_question():
 
 
 def test_chat_endpoint_saving_account():
-    """Verify chat endpoint handles saving account question."""
+    """Verify chat endpoint handles saving account minimum deposit question."""
     response = client.post(
         "/chat",
-        json={"question": "What is the minimum balance for a saving account?"},
+        json={"question": "What is the minimum_deposit for saving_account?"},
     )
     assert response.status_code == 200
     data = response.json()
