@@ -74,10 +74,6 @@ class Attribute(Base):
 
 
 class EntityValue(Base):
-    """
-    Links an entity to an attribute with a value.
-    Example: bank→home_loan + interest_rate = 8.5
-    """
     __tablename__ = "entity_value"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -91,7 +87,6 @@ class EntityValue(Base):
         ForeignKey("attribute.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # Stored as String in ORM — actual LTREE type handled at SQL level
     path_name: Mapped[str | None] = mapped_column(String, nullable=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     type: Mapped[str] = mapped_column(
@@ -105,12 +100,12 @@ class EntityValue(Base):
         nullable=True,
     )
 
-    # Relationships
     entity: Mapped["Entity"] = relationship("Entity", back_populates="values")
     attribute: Mapped["Attribute"] = relationship("Attribute", back_populates="values")
 
     __table_args__ = (
-        UniqueConstraint("entity_id", "attribute_id", name="uq_entity_attribute"),
+        # Changed from (entity_id, attribute_id) to (entity_id, path_name)
+        UniqueConstraint("entity_id", "path_name", name="uq_entity_path"),
         Index("idx_ev_entity_id", "entity_id"),
         Index("idx_ev_attribute_id", "attribute_id"),
         CheckConstraint(

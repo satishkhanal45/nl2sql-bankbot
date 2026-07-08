@@ -112,33 +112,23 @@ def search_by_query_type(
     db: Session,
     entity_name: str,
     fact: str,
+    instance: Optional[str],
     attribute: Optional[str],
 ) -> dict:
     """
-    Combined search function that handles both specific and broad queries.
+    Handles both specific and broad queries using 4-level LTREE paths.
 
-    Specific query (attribute provided):
-        entity=bank, fact=home_loan, attribute=interest_rate
-        → constructs path: bank.home_loan.interest_rate
-        → exact LTREE match
-        → returns single value
-
-    Broad query (attribute is None):
-        entity=bank, fact=home_loan, attribute=None
-        → constructs path prefix: bank.home_loan
-        → LTREE <@ hierarchical match
-        → returns all values under that path
-
-    Returns:
-        {
-            "query_type": "specific" or "broad",
-            "found": True or False,
-            "data": dict or list
-        }
+    Path structure: bank.<category>.<instance>.<attribute>
+    Examples:
+        bank.loan.home_loan.interest_rate   ← specific
+        bank.loan.home_loan                 ← broad (all home loan details)
+        bank.loan                           ← broad (all loans)
+        bank.branch.anamnagar.address       ← specific
+        bank.branch.anamnagar               ← broad (all anamnagar details)
     """
-    if attribute:
+    if attribute and instance:
         # ── SPECIFIC QUERY ─────────────────────────────────
-        path = f"{entity_name}.{fact}.{attribute}"
+        path = f"{entity_name}.{fact}.{instance}.{attribute}"
 
         result = db.execute(
             text("""
@@ -153,11 +143,7 @@ def search_by_query_type(
         ).fetchone()
 
         if result is None:
-            return {
-                "query_type": "specific",
-                "found": False,
-                "data": None,
-            }
+            return {"query_type": "specific", "found": False, "data": None}
 
         return {
             "query_type": "specific",
@@ -171,7 +157,13 @@ def search_by_query_type(
 
     else:
         # ── BROAD QUERY ────────────────────────────────────
-        path_prefix = f"{entity_name}.{fact}"
+        # Build prefix based on what we know
+        if instance:
+            # e.g. bank.loan.home_loan — all details of one product
+            path_prefix = f"{entity_name}.{fact}.{instance}"
+        else:
+            # e.g. bank.loan — all products in a category
+            path_prefix = f"{entity_name}.{fact}"
 
         results = db.execute(
             text("""
@@ -189,11 +181,7 @@ def search_by_query_type(
         ).fetchall()
 
         if not results:
-            return {
-                "query_type": "broad",
-                "found": False,
-                "data": [],
-            }
+            return {"query_type": "broad", "found": False, "data": []}
 
         return {
             "query_type": "broad",

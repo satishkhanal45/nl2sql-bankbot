@@ -86,18 +86,7 @@ answer this question and suggest they contact the bank directly."""
     )
 
 
-def process_chat(
-    db,
-    original_question: str,
-    search_result: dict,
-) -> dict:
-    """
-    Main function — generates the final answer based on query type.
-
-    Specific query → generate_response() — one sentence answer
-    Broad query    → generate_broad_response() — full summary
-    Not found      → generate_not_found_response() — polite fallback
-    """
+def process_chat(db, original_question, search_result) -> dict:
     if not search_result["found"]:
         answer = generate_not_found_response(original_question)
         return {
@@ -114,15 +103,16 @@ def process_chat(
         data = search_result["data"]
         answer = generate_response(
             original_question=original_question,
-            fact=query["fact"],
+            fact=f"{query['fact']} {query.get('instance', '')}",
             attribute=data["attribute"],
             formatted_value=data["formatted_value"],
         )
     else:
-        # broad query
+        # broad_instance or broad_category
         answer = generate_broad_response(
             original_question=original_question,
-            fact=query["fact"],
+            fact=f"{query['fact']}"
+                 + (f" {query.get('instance', '')}" if query.get("instance") else ""),
             data=search_result["data"],
         )
 

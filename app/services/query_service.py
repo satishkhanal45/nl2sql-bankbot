@@ -8,49 +8,55 @@ from app.services.llm_service import ask_llm
 # This is the full list of entities, facts, and attributes
 # the LLM needs to know about so it maps questions correctly.
 # We give it this context so it doesn't guess wrong values.
+
+
+
 DATABASE_CONTEXT = """
 You have access to a bank knowledge database with the following structure:
 
 ENTITY: bank
-FACTS and their ATTRIBUTES:
 
-BRANCHES:
-1. branch_anamnagar → address, phone, email, website, manager, opening_hours, branch_code, province, district, city, atm_available, parking_available
-2. branch_baneshwor → address, phone, email, website, manager, opening_hours, branch_code, province, district, city, atm_available, parking_available
-3. branch_kalanki   → address, phone, email, website, manager, opening_hours, branch_code, province, district, city, atm_available, parking_available
-4. branch_pokhara   → address, phone, email, website, manager, opening_hours, branch_code, province, district, city, atm_available, parking_available
+CATEGORIES, INSTANCES, and their ATTRIBUTES:
 
-LOANS:
-5. home_loan       → interest_rate, minimum_loan_amount, maximum_loan_amount, minimum_tenure, maximum_tenure, processing_fee, collateral, eligibility, required_documents, loan_type
-6. education_loan  → interest_rate, minimum_loan_amount, maximum_loan_amount, minimum_tenure, maximum_tenure, processing_fee, collateral, eligibility, required_documents, loan_type
-7. personal_loan   → interest_rate, minimum_loan_amount, maximum_loan_amount, minimum_tenure, maximum_tenure, processing_fee, collateral, eligibility, required_documents, loan_type
-8. auto_loan       → interest_rate, minimum_loan_amount, maximum_loan_amount, minimum_tenure, maximum_tenure, processing_fee, collateral, eligibility, required_documents, loan_type
+CATEGORY: branch
+  INSTANCES: anamnagar, baneshwor, kalanki, pokhara
+  ATTRIBUTES: address, phone, email, website, manager, opening_hours,
+              branch_code, province, district, city, atm_available, parking_available
 
-DEPOSIT ACCOUNTS:
-9.  saving_account   → interest_rate, minimum_deposit, maximum_deposit, currency, interest_calculation, eligibility, required_documents
-10. current_account  → interest_rate, minimum_deposit, currency, interest_calculation, eligibility, required_documents, service_charge
-11. fixed_deposit    → interest_rate, minimum_deposit, currency, interest_calculation, maturity_period, minimum_tenure, maximum_tenure
-12. recurring_deposit → interest_rate, minimum_deposit, currency, interest_calculation, minimum_tenure, maximum_tenure, eligibility
+CATEGORY: loan
+  INSTANCES: home_loan, education_loan, personal_loan, auto_loan
+  ATTRIBUTES: interest_rate, minimum_loan_amount, maximum_loan_amount,
+              minimum_tenure, maximum_tenure, processing_fee, collateral,
+              eligibility, required_documents, loan_type
 
-CARDS:
-13. debit_card  → annual_fee, joining_fee, cashback, reward_points, replacement_fee, pin_generation, cash_withdrawal_limit, transaction_limit, supported_platforms
-14. credit_card → annual_fee, joining_fee, cashback, reward_points, replacement_fee, pin_generation, cash_withdrawal_limit, transaction_limit, supported_platforms, eligibility
+CATEGORY: account
+  INSTANCES: saving_account, current_account, fixed_deposit, recurring_deposit
+  ATTRIBUTES: interest_rate, minimum_deposit, maximum_deposit, currency,
+              interest_calculation, maturity_period, eligibility,
+              required_documents, service_charge
 
-SERVICES:
-15. mobile_banking   → availability, supported_platforms, transaction_limit, service_charge, registration_requirement
-16. internet_banking → availability, supported_platforms, transaction_limit, service_charge, registration_requirement
-17. sms_banking      → availability, supported_platforms, transaction_limit, service_charge, registration_requirement
-18. qr_payment       → availability, supported_platforms, transaction_limit, service_charge, registration_requirement
-19. remittance       → availability, supported_platforms, transaction_limit, service_charge, registration_requirement
+CATEGORY: card
+  INSTANCES: debit_card, credit_card
+  ATTRIBUTES: annual_fee, joining_fee, cashback, reward_points,
+              replacement_fee, pin_generation, cash_withdrawal_limit,
+              transaction_limit, supported_platforms, eligibility
 
-ATM:
-20. atm_anamnagar  → address, availability, cash_withdrawal_limit, deposit_machine_available, mini_statement, balance_inquiry
-21. atm_baneshwor  → address, availability, cash_withdrawal_limit, deposit_machine_available, mini_statement, balance_inquiry
+CATEGORY: service
+  INSTANCES: mobile_banking, internet_banking, sms_banking, qr_payment, remittance
+  ATTRIBUTES: availability, supported_platforms, transaction_limit,
+              service_charge, registration_requirement
 
-ORGANIZATION:
-22. head_office          → address, phone, email, website, manager, swift_code, established_year, total_branches
-23. customer_support     → phone, email, toll_free_number, support_hours, availability
-24. grievance_department → grievance_email, grievance_phone, resolution_time, support_hours, website
+CATEGORY: atm
+  INSTANCES: atm_anamnagar, atm_baneshwor
+  ATTRIBUTES: address, availability, cash_withdrawal_limit,
+              deposit_machine_available, mini_statement, balance_inquiry
+
+CATEGORY: organization
+  INSTANCES: head_office, customer_support, grievance_department
+  ATTRIBUTES: address, phone, email, website, manager, swift_code,
+              established_year, total_branches, toll_free_number,
+              support_hours, grievance_email, grievance_phone,
+              resolution_time, availability
 """
 
 
@@ -59,34 +65,45 @@ SYSTEM_PROMPT = f"""You are a structured data extractor for a bank knowledge bas
 {DATABASE_CONTEXT}
 
 Your job:
-- Read the user's question
-- Identify which entity, fact, and attribute they are asking about
-- Return ONLY a valid JSON object with exactly these three keys:
-  {{"entity": "...", "fact": "...", "attribute": "..."}}
+- Read the user question
+- Identify the category, instance, and attribute being asked about
+- Return ONLY a valid JSON object with exactly these four keys:
+  {{"entity": "bank", "fact": "<category>", "instance": "<instance>", "attribute": "<attribute>"}}
 
 Rules:
 - entity is always "bank"
-- fact must exactly match one of the facts listed above
-- attribute must exactly match one of the attributes listed above
+- fact must exactly match one of the CATEGORY names listed above
+- instance must exactly match one of the INSTANCE names listed above
+- attribute must exactly match one of the ATTRIBUTE names listed above
 
 IMPORTANT — when to set attribute to null:
-- If the user asks for ALL information about a fact
+- If the user asks for ALL information about an instance
   (e.g. "Tell me everything about home loan",
-        "What are all the home loan details?",
-        "Give me full details of personal loan")
-  → set attribute to null
+        "Give me full details of anamnagar branch")
+  → set attribute to null, keep fact and instance
 
-- If the user asks for a SPECIFIC piece of information
-  (e.g. "What is the home loan interest rate?",
-        "Who is the manager of branch anamnagar?")
-  → set attribute to the exact matching label
+- If the user asks about an entire CATEGORY
+  (e.g. "Tell me all loan types", "What branches do you have?")
+  → set attribute to null AND instance to null, keep fact only
 
-- If you cannot determine the fact or attribute, return:
-  {{"entity": "bank", "fact": null, "attribute": null}}
+- If you cannot determine the category, return:
+  {{"entity": "bank", "fact": null, "instance": null, "attribute": null}}
 
 Return ONLY the JSON. No explanation. No markdown. No extra text.
-"""
 
+Examples:
+Q: What is the home loan interest rate?
+A: {{"entity": "bank", "fact": "loan", "instance": "home_loan", "attribute": "interest_rate"}}
+
+Q: Tell me everything about the anamnagar branch
+A: {{"entity": "bank", "fact": "branch", "instance": "anamnagar", "attribute": null}}
+
+Q: What loans do you offer?
+A: {{"entity": "bank", "fact": "loan", "instance": null, "attribute": null}}
+
+Q: What is the toll free number for customer support?
+A: {{"entity": "bank", "fact": "organization", "instance": "customer_support", "attribute": "toll_free_number"}}
+"""
 
 
 def extract_json_from_response(response: str) -> Optional[dict]:
@@ -123,15 +140,16 @@ def understand_query(user_question: str) -> dict:
     """
     Converts a natural language question into structured JSON.
 
-    Two valid success cases:
-    1. Specific query  → fact + attribute both present
-    2. Broad query     → fact present, attribute is None
+    Three valid success cases:
+    1. Specific query  → fact + instance + attribute all present
+    2. Instance broad  → fact + instance present, attribute is None
+    3. Category broad  → fact only present, instance and attribute are None
     """
     raw_response = ask_llm(
         prompt=user_question,
         system_prompt=SYSTEM_PROMPT,
         temperature=0.0,
-        max_tokens=100,
+        max_tokens=150,
     )
 
     parsed = extract_json_from_response(raw_response)
@@ -140,6 +158,7 @@ def understand_query(user_question: str) -> dict:
         return {
             "entity": "bank",
             "fact": None,
+            "instance": None,
             "attribute": None,
             "original_question": user_question,
             "query_type": "unknown",
@@ -148,37 +167,40 @@ def understand_query(user_question: str) -> dict:
         }
 
     fact = parsed.get("fact")
+    instance = parsed.get("instance")
     attribute = parsed.get("attribute")
 
-    # Complete failure — fact not identified
+    # Complete failure — category not identified
     if not fact or fact == "null":
         return {
             "entity": "bank",
             "fact": None,
+            "instance": None,
             "attribute": None,
             "original_question": user_question,
             "query_type": "unknown",
             "success": False,
-            "error": "Question not understood — fact could not be identified",
+            "error": "Question not understood — category could not be identified",
         }
 
-    # Broad query — fact found but attribute is null
-    if not attribute or attribute == "null":
-        return {
-            "entity": parsed.get("entity", "bank"),
-            "fact": fact,
-            "attribute": None,
-            "original_question": user_question,
-            "query_type": "broad",
-            "success": True,
-        }
+    # Clean up null strings
+    instance = None if (not instance or instance == "null") else instance
+    attribute = None if (not attribute or attribute == "null") else attribute
 
-    # Specific query — both fact and attribute found
+    # Determine query type
+    if instance and attribute:
+        query_type = "specific"
+    elif instance and not attribute:
+        query_type = "broad_instance"
+    else:
+        query_type = "broad_category"
+
     return {
         "entity": parsed.get("entity", "bank"),
         "fact": fact,
+        "instance": instance,
         "attribute": attribute,
         "original_question": user_question,
-        "query_type": "specific",
+        "query_type": query_type,
         "success": True,
     }

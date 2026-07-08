@@ -47,27 +47,11 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
     """
     Takes the output of understand_query() and searches the database.
 
-    Handles two query types:
-    - specific: single value lookup via exact LTREE path match
-                triggered when attribute is present in query_result
-    - broad:    all values under a path prefix via LTREE <@ operator
-                triggered when attribute is None in query_result
-
-    Args:
-        db: SQLAlchemy session
-        query_result: Output dict from understand_query()
-
-    Returns:
-        {
-            "success":    True/False,
-            "found":      True/False,
-            "query_type": "specific", "broad", or "unknown",
-            "data":       dict (specific) | list (broad) | None,
-            "query":      the original query_result dict,
-            "error":      str or None,
-        }
+    Three query types:
+    - specific:        exact LTREE path match
+    - broad_instance:  all attributes of one instance
+    - broad_category:  everything under a category
     """
-    # If query understanding failed, pass the error through
     if not query_result.get("success"):
         return {
             "success": False,
@@ -78,20 +62,20 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
             "error": query_result.get("error", "Query understanding failed"),
         }
 
-    entity = query_result["entity"]
-    fact = query_result["fact"]
-    attribute = query_result.get("attribute")  # None for broad queries
+    entity    = query_result["entity"]
+    fact      = query_result["fact"]
+    instance  = query_result.get("instance")
+    attribute = query_result.get("attribute")
     query_type = query_result.get("query_type", "specific")
 
-    # Call the unified repository function
     db_result = entity_repository.search_by_query_type(
         db=db,
         entity_name=entity,
         fact=fact,
+        instance=instance,
         attribute=attribute,
     )
 
-    # Nothing found in database
     if not db_result["found"]:
         return {
             "success": True,
@@ -101,15 +85,17 @@ def search_from_query_result(db: Session, query_result: dict) -> dict:
             "query": query_result,
             "error": (
                 f"No data found for {entity}.{fact}"
+                + (f".{instance}" if instance else "")
                 + (f".{attribute}" if attribute else ".*")
             ),
         }
 
-    # Specific query — add formatted value to data
+    # For specific queries, add formatted value
     if db_result["query_type"] == "specific":
         data = db_result["data"]
-        data["entity"] = entity
-        data["fact"] = fact
+        data["entity"]   = entity
+        data["fact"]     = fact
+        data["instance"] = instance
         data["attribute"] = attribute
         data["formatted_value"] = format_value(
             data["value"],

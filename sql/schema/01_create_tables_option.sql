@@ -1,5 +1,3 @@
--- Enable ltree extension for hierarchical path support
-CREATE EXTENSION IF NOT EXISTS ltree;
 
 -- TABLE 1: entity
 
@@ -60,10 +58,8 @@ CREATE TABLE IF NOT EXISTS entity_value (
         REFERENCES attribute (id)
         ON DELETE CASCADE,
 
-    -- Prevent duplicate entity+path combinations
-    -- (entity_id, attribute_id) is NOT unique because multiple instances
-    -- within the same category share the same entity_id and attribute_id
-    CONSTRAINT uq_entity_path UNIQUE (entity_id, path_name)
+    -- Prevent duplicate entity+attribute combinations
+    --CONSTRAINT uq_entity_attribute UNIQUE (entity_id, attribute_id)
 );
 
 -- Index for fast lookups by entity_id
@@ -74,3 +70,8 @@ CREATE INDEX IF NOT EXISTS idx_ev_attribute_id ON entity_value (attribute_id);
 
 -- GiST index for fast LTREE path queries (<@, @>, ~, ?)
 CREATE INDEX IF NOT EXISTS idx_ev_path_name ON entity_value USING GIST (path_name);
+
+
+
+
+

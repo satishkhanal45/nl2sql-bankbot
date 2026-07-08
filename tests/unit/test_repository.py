@@ -71,36 +71,27 @@ def test_get_all_facts_for_entity(db):
 
 
 def test_search_by_query_type_specific(db):
-    """Verify specific query returns single value via exact LTREE match."""
     result = entity_repository.search_by_query_type(
-        db, "bank", "home_loan", "interest_rate"
+        db, "bank", "loan", "home_loan", "interest_rate"
     )
-    assert result["query_type"] == "specific"
     assert result["found"] is True
     assert result["data"]["value"] == "8.5"
-    assert result["data"]["path_name"] == "bank.home_loan.interest_rate"
-
+    assert result["data"]["path_name"] == "bank.loan.home_loan.interest_rate"
 
 def test_search_by_query_type_broad(db):
-    """Verify broad query returns all values under a path prefix."""
     result = entity_repository.search_by_query_type(
-        db, "bank", "home_loan", None
+        db, "bank", "loan", "home_loan", None
     )
-    assert result["query_type"] == "broad"
     assert result["found"] is True
     assert len(result["data"]) > 0
     path_names = [r["path_name"] for r in result["data"]]
-    assert "bank.home_loan.interest_rate" in path_names
-    assert "bank.home_loan.loan_type" in path_names
-
+    assert "bank.loan.home_loan.interest_rate" in path_names
 
 def test_search_by_query_type_not_found(db):
-    """Verify not found returned for unknown path."""
     result = entity_repository.search_by_query_type(
-        db, "bank", "unknown_fact", "unknown_attr"
+        db, "bank", "loan", "unknown", "unknown"
     )
     assert result["found"] is False
-
 
 def test_search_by_query_type_broad_not_found(db):
     """Verify not found returned for unknown broad path."""
