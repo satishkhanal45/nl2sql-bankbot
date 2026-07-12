@@ -107,27 +107,65 @@ def get_all_facts_for_entity(
         for row in results
     ]
 
-
 def search_by_query_type(
     db: Session,
     entity_name: str,
-    fact: str,
+    fact: Optional[str],
     instance: Optional[str],
     attribute: Optional[str],
 ) -> dict:
     """
-    Handles both specific and broad queries using 4-level LTREE paths.
+    Unified search function handling all five query types.
 
-    Path structure: bank.<category>.<instance>.<attribute>
-    Examples:
-        bank.loan.home_loan.interest_rate   ← specific
-        bank.loan.home_loan                 ← broad (all home loan details)
-        bank.loan                           ← broad (all loans)
-        bank.branch.anamnagar.address       ← specific
-        bank.branch.anamnagar               ← broad (all anamnagar details)
+    specific:        bank.loan.home_loan.interest_rate  → exact match
+    broad_instance:  bank.loan.home_loan                → all under instance
+    broad_category:  bank.loan                          → all under category
+    attribute_only:  WHERE attribute_id = <id>          → all rows with that attribute
     """
-    if attribute and instance:
-        # ── SPECIFIC QUERY ─────────────────────────────────
+
+    # ── ATTRIBUTE ONLY ─────────────────────────────────────────────────
+    if attribute and not fact and not instance:
+        results = db.execute(
+            text("""
+                SELECT
+                    ev.path_name::text  AS path_name,
+                    ev.value,
+                    ev.type,
+                    a.label             AS attribute,
+                    e.fact              AS category
+                FROM entity_value ev
+                JOIN attribute a ON a.id = ev.attribute_id
+                JOIN entity    e ON e.id = ev.entity_id
+                WHERE a.label = :attribute
+                ORDER BY e.fact, ev.path_name
+            """),
+            {"attribute": attribute},
+        ).fetchall()
+
+        if not results:
+            return {
+                "query_type": "attribute_only",
+                "found": False,
+                "data": [],
+            }
+
+        return {
+            "query_type": "attribute_only",
+            "found": True,
+            "data": [
+                {
+                    "path_name": row.path_name,
+                    "value":     row.value,
+                    "type":      row.type,
+                    "attribute": row.attribute,
+                    "category":  row.category,
+                }
+                for row in results
+            ],
+        }
+
+    # ── SPECIFIC ───────────────────────────────────────────────────────
+    if attribute and instance and fact:
         path = f"{entity_name}.{fact}.{instance}.{attribute}"
 
         result = db.execute(
@@ -149,50 +187,50 @@ def search_by_query_type(
             "query_type": "specific",
             "found": True,
             "data": {
-                "value": result.value,
-                "type": result.type,
+                "value":     result.value,
+                "type":      result.type,
                 "path_name": result.path_name,
             },
         }
 
+    # ── BROAD (instance or category) ───────────────────────────────────
+    if instance:
+        path_prefix = f"{entity_name}.{fact}.{instance}"
     else:
-        # ── BROAD QUERY ────────────────────────────────────
-        # Build prefix based on what we know
-        if instance:
-            # e.g. bank.loan.home_loan — all details of one product
-            path_prefix = f"{entity_name}.{fact}.{instance}"
-        else:
-            # e.g. bank.loan — all products in a category
-            path_prefix = f"{entity_name}.{fact}"
+        path_prefix = f"{entity_name}.{fact}"
 
-        results = db.execute(
-            text("""
-                SELECT
-                    ev.path_name::text AS path_name,
-                    ev.value,
-                    ev.type,
-                    a.label AS attribute
-                FROM entity_value ev
-                JOIN attribute a ON a.id = ev.attribute_id
-                WHERE ev.path_name <@ CAST(:path AS ltree)
-                ORDER BY ev.path_name
-            """),
-            {"path": path_prefix},
-        ).fetchall()
+    results = db.execute(
+        text("""
+            SELECT
+                ev.path_name::text AS path_name,
+                ev.value,
+                ev.type,
+                a.label AS attribute
+            FROM entity_value ev
+            JOIN attribute a ON a.id = ev.attribute_id
+            WHERE ev.path_name <@ CAST(:path AS ltree)
+            ORDER BY ev.path_name
+        """),
+        {"path": path_prefix},
+    ).fetchall()
 
-        if not results:
-            return {"query_type": "broad", "found": False, "data": []}
-
+    if not results:
         return {
             "query_type": "broad",
-            "found": True,
-            "data": [
-                {
-                    "path_name": row.path_name,
-                    "attribute": row.attribute,
-                    "value": row.value,
-                    "type": row.type,
-                }
-                for row in results
-            ],
+            "found": False,
+            "data": [],
         }
+
+    return {
+        "query_type": "broad",
+        "found": True,
+        "data": [
+            {
+                "path_name": row.path_name,
+                "attribute": row.attribute,
+                "value":     row.value,
+                "type":      row.type,
+            }
+            for row in results
+        ],
+    }

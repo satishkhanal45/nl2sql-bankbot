@@ -5,12 +5,6 @@ from typing import Optional
 from app.services.llm_service import ask_llm
 
 
-# This is the full list of entities, facts, and attributes
-# the LLM needs to know about so it maps questions correctly.
-# We give it this context so it doesn't guess wrong values.
-
-
-
 DATABASE_CONTEXT = """
 You have access to a bank knowledge database with the following structure:
 
@@ -76,48 +70,40 @@ Rules:
 - instance must exactly match one of the INSTANCE names listed above
 - attribute must exactly match one of the ATTRIBUTE names listed above
 
-IMPORTANT — when to set attribute to null:
-- If the user asks for ALL information about an instance
-  (e.g. "Tell me everything about home loan",
-        "Give me full details of anamnagar branch")
-  → set attribute to null, keep fact and instance
+IMPORTANT — when to set fields to null:
 
-- If the user asks about an entire CATEGORY
-  (e.g. "Tell me all loan types", "What branches do you have?")
-  → set attribute to null AND instance to null, keep fact only
+Case 1 — SPECIFIC query (fact + instance + attribute all known):
+  Q: "What is the home loan interest rate?"
+  A: {{"entity": "bank", "fact": "loan", "instance": "home_loan", "attribute": "interest_rate"}}
 
-- If you cannot determine the category, return:
-  {{"entity": "bank", "fact": null, "instance": null, "attribute": null}}
+Case 2 — BROAD INSTANCE query (fact + instance known, attribute unknown):
+  Q: "Tell me everything about home loan"
+  A: {{"entity": "bank", "fact": "loan", "instance": "home_loan", "attribute": null}}
+
+Case 3 — BROAD CATEGORY query (only fact known):
+  Q: "What loans do you offer?"
+  A: {{"entity": "bank", "fact": "loan", "instance": null, "attribute": null}}
+
+Case 4 — ATTRIBUTE ONLY query (only attribute known, no specific product mentioned):
+  Q: "Give me the interest rate" or "What are all the interest rates?"
+  Q: "What is the processing fee?" or "Show me all processing fees"
+  Q: "What are the opening hours?" or "Give me manager details"
+  A: {{"entity": "bank", "fact": null, "instance": null, "attribute": "<attribute_label>"}}
+  → Use this when the user asks about an attribute WITHOUT specifying
+    which product, branch, or service they mean.
+
+Case 5 — UNKNOWN (cannot determine anything):
+  A: {{"entity": "bank", "fact": null, "instance": null, "attribute": null}}
 
 Return ONLY the JSON. No explanation. No markdown. No extra text.
-
-Examples:
-Q: What is the home loan interest rate?
-A: {{"entity": "bank", "fact": "loan", "instance": "home_loan", "attribute": "interest_rate"}}
-
-Q: Tell me everything about the anamnagar branch
-A: {{"entity": "bank", "fact": "branch", "instance": "anamnagar", "attribute": null}}
-
-Q: What loans do you offer?
-A: {{"entity": "bank", "fact": "loan", "instance": null, "attribute": null}}
-
-Q: What is the toll free number for customer support?
-A: {{"entity": "bank", "fact": "organization", "instance": "customer_support", "attribute": "toll_free_number"}}
 """
 
 
 def extract_json_from_response(response: str) -> Optional[dict]:
     """
     Safely parses the LLM response into a Python dict.
-
-    Handles edge cases where the model adds:
-    - Markdown code blocks: ```json ... ```
-    - Extra whitespace or newlines
-    - Partial JSON
-
-    Returns None if parsing fails.
+    Handles markdown code blocks, extra whitespace, and partial JSON.
     """
-    # Remove markdown code blocks if present
     response = response.strip()
     response = re.sub(r"```json\s*", "", response)
     response = re.sub(r"```\s*", "", response)
@@ -126,7 +112,6 @@ def extract_json_from_response(response: str) -> Optional[dict]:
     try:
         return json.loads(response)
     except json.JSONDecodeError:
-        # Try to find JSON object inside the response
         match = re.search(r"\{.*?\}", response, re.DOTALL)
         if match:
             try:
@@ -140,10 +125,12 @@ def understand_query(user_question: str) -> dict:
     """
     Converts a natural language question into structured JSON.
 
-    Three valid success cases:
-    1. Specific query  → fact + instance + attribute all present
-    2. Instance broad  → fact + instance present, attribute is None
-    3. Category broad  → fact only present, instance and attribute are None
+    Five valid cases:
+    1. specific        → fact + instance + attribute all present
+    2. broad_instance  → fact + instance present, attribute None
+    3. broad_category  → fact only present, instance and attribute None
+    4. attribute_only  → attribute only present, fact and instance None
+    5. unknown         → nothing identified → failure
     """
     raw_response = ask_llm(
         prompt=user_question,
@@ -166,12 +153,29 @@ def understand_query(user_question: str) -> dict:
             "error": f"Could not parse LLM response: {raw_response}",
         }
 
-    fact = parsed.get("fact")
-    instance = parsed.get("instance")
+    fact      = parsed.get("fact")
+    instance  = parsed.get("instance")
     attribute = parsed.get("attribute")
 
-    # Complete failure — category not identified
-    if not fact or fact == "null":
+    # Clean up null strings from LLM
+    fact      = None if (not fact      or fact      == "null") else fact
+    instance  = None if (not instance  or instance  == "null") else instance
+    attribute = None if (not attribute or attribute == "null") else attribute
+
+    # Case 4 — attribute only (no fact, no instance, but attribute present)
+    if attribute and not fact and not instance:
+        return {
+            "entity": parsed.get("entity", "bank"),
+            "fact": None,
+            "instance": None,
+            "attribute": attribute,
+            "original_question": user_question,
+            "query_type": "attribute_only",
+            "success": True,
+        }
+
+    # Case 5 — complete failure, nothing identified
+    if not fact:
         return {
             "entity": "bank",
             "fact": None,
@@ -183,11 +187,7 @@ def understand_query(user_question: str) -> dict:
             "error": "Question not understood — category could not be identified",
         }
 
-    # Clean up null strings
-    instance = None if (not instance or instance == "null") else instance
-    attribute = None if (not attribute or attribute == "null") else attribute
-
-    # Determine query type
+    # Case 1, 2, 3 — determine query type from what's present
     if instance and attribute:
         query_type = "specific"
     elif instance and not attribute:
